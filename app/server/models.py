@@ -114,6 +114,21 @@ class Project(models.Model):
         elif self.is_type_of(Project.Seq2seq):
             return Seq2seqAnnotation
 
+    def export_annotated_docs_to_csv(self):
+        docs = self.get_documents(is_null=False).distinct()
+        if self.is_type_of(Project.DOCUMENT_CLASSIFICATION):
+            header = ['id','text','label','username','meta']
+        elif self.is_type_of(Project.SEQUENCE_LABELING):
+            header = ['id','char','label','username','meta']
+        elif self.is_type_of(Project.Seq2seq):
+            header = ['id','text','output','username','meta']
+        
+        rows = []
+        for doc in docs:
+            rows += doc.make_dataset()
+        
+        return [header] + rows
+
     def __str__(self):
         return self.name
 
@@ -141,6 +156,7 @@ class Label(models.Model):
 class Document(models.Model):
     text = models.TextField()
     project = models.ForeignKey(Project, related_name='documents', on_delete=models.CASCADE)
+    meta = models.TextField(default='{}')
 
     def get_annotations(self):
         if self.project.is_type_of(Project.DOCUMENT_CLASSIFICATION):
@@ -160,13 +176,13 @@ class Document(models.Model):
 
     def make_dataset_for_classification(self):
         annotations = self.get_annotations()
-        dataset = [[a.document.id, a.document.text, a.label.text, a.user.username]
+        dataset = [[a.document.id, a.document.text, a.label.text, a.user.username, a.document.meta]
                    for a in annotations]
         return dataset
 
     def make_dataset_for_sequence_labeling(self):
         annotations = self.get_annotations()
-        dataset = [[self.id, ch, 'O'] for ch in self.text]
+        dataset = [[self.id, ch, 'O', self.meta] for ch in self.text]
         for a in annotations:
             for i in range(a.start_offset, a.end_offset):
                 if i == a.start_offset:
@@ -177,7 +193,7 @@ class Document(models.Model):
 
     def make_dataset_for_seq2seq(self):
         annotations = self.get_annotations()
-        dataset = [[a.document.id, a.document.text, a.text, a.user.username]
+        dataset = [[a.document.id, a.document.text, a.text, a.user.username, a.document.meta]
                    for a in annotations]
         return dataset
 
