@@ -182,7 +182,7 @@ class Document(models.Model):
 
     def make_dataset_for_sequence_labeling(self):
         annotations = self.get_annotations()
-        dataset = [[self.id, ch, 'O', self.meta] for ch in self.text]
+        dataset = [[self.id, ch, 'O', self.user.username, self.meta] for ch in self.text]
         for a in annotations:
             for i in range(a.start_offset, a.end_offset):
                 if i == a.start_offset:
