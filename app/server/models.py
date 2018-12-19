@@ -119,7 +119,7 @@ class Project(models.Model):
         if self.is_type_of(Project.DOCUMENT_CLASSIFICATION):
             header = ['id','text','label','username','meta']
         elif self.is_type_of(Project.SEQUENCE_LABELING):
-            header = ['id','char','label','username','meta']
+            header = ['id','char','label','meta']
         elif self.is_type_of(Project.Seq2seq):
             header = ['id','text','output','meta']
         
