@@ -134,8 +134,8 @@ class DataUpload(SuperUserMixin, LoginRequiredMixin, TemplateView):
                 if not batch:
                     break
 
-                to_create = list((doc for doc in batch if doc.id is None))
-                to_create_or_update = list((doc for doc in batch if doc.id))
+                to_create = [doc for doc in batch if doc.id is None]
+                to_create_or_update = [doc for doc in batch if doc.id]
                 
                 Document.objects.bulk_create(to_create, batch_size=batch_size)
 
