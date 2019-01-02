@@ -87,7 +87,6 @@ class DataUpload(SuperUserMixin, LoginRequiredMixin, TemplateView):
 
             if id_key in maybe_header:
                 id_col = maybe_header.index(id_key)
-                print(id_col)
             else:
                 id_col = None
 
