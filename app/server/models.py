@@ -140,6 +140,7 @@ class Label(models.Model):
 
 
 class Document(models.Model):
+    id = models.CharField(primary_key=True, max_length=36)
     text = models.TextField()
     project = models.ForeignKey(Project, related_name='documents', on_delete=models.CASCADE)
     metadata = models.TextField(default='{}')
