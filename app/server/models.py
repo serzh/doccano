@@ -201,21 +201,24 @@ class Document(models.Model):
         annotations = self.get_annotations()
         labels = [a.label.text for a in annotations]
         username = annotations[0].user.username
-        dataset = {'doc_id': self.id, 'text': self.text, 'labels': labels, 'username': username, 'metadata': json.loads(self.metadata)}
+        dataset = json.loads(self.metadata)
+        dataset.update({'id': self.id, 'text': self.text, 'labels': labels, 'username': username})
         return dataset
 
     def make_dataset_for_sequence_labeling_json(self):
         annotations = self.get_annotations()
         entities = [(a.start_offset, a.end_offset, a.label.text) for a in annotations]
         username = annotations[0].user.username
-        dataset = {'doc_id': self.id, 'text': self.text, 'entities': entities, 'username': username, 'metadata': json.loads(self.metadata)}
+        dataset = json.loads(self.metadata)
+        dataset.update({'id': self.id, 'text': self.text, 'entities': entities, 'username': username})
         return dataset
 
     def make_dataset_for_seq2seq_json(self):
         annotations = self.get_annotations()
         sentences = [a.text for a in annotations]
         username = annotations[0].user.username
-        dataset = {'doc_id': self.id, 'text': self.text, 'sentences': sentences, 'username': username, 'metadata': json.loads(self.metadata)}
+        dataset = json.loads(self.metadata)
+        dataset.update({'id': self.id, 'text': self.text, 'sentences': sentences, 'username': username})
         return dataset
 
     def __str__(self):
