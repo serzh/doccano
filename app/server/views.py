@@ -102,16 +102,18 @@ class DataUpload(SuperUserMixin, LoginRequiredMixin, TemplateView):
         else:
             return []
 
-    def extract_metadata_json(self, entry, text_key):
+    def extract_metadata_json(self, entry, known_keys):
         copy = entry.copy()
-        del copy[text_key]
+        for key in known_keys:
+            del copy[key]
         return json.dumps(copy)
 
-    def json_to_documents(self, project, file, text_key='text', id_key='id'):            
+    def json_to_documents(self, project, file, text_key='text', id_key='id'):     
+        known_keys = {text_key, id_key}
         parsed_entries = (json.loads(line) for line in file)
         
         return (
-            Document(id=entry[id_key], text=entry[text_key], metadata=self.extract_metadata_json(entry, text_key), project=project)
+            Document(id=entry[id_key], text=entry[text_key], metadata=self.extract_metadata_json(entry, known_keys), project=project)
             for entry in parsed_entries
         )
 
