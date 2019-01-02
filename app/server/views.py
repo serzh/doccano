@@ -68,7 +68,7 @@ class DataUpload(SuperUserMixin, LoginRequiredMixin, TemplateView):
         vals_without_text = [val for i,val in enumerate(row) if i != text_col]
         return json.dumps(dict(zip(header_without_text, vals_without_text)))
 
-    def csv_to_documents(self, project, file, text_key='text'):
+    def csv_to_documents(self, project, file, text_key='text', id_key='id'):
         form_data = TextIOWrapper(file, encoding='utf-8')
         reader = csv.reader(form_data)
         
@@ -85,8 +85,15 @@ class DataUpload(SuperUserMixin, LoginRequiredMixin, TemplateView):
             header_without_text = [title for i,title in enumerate(maybe_header) 
                                    if i != text_col]
 
+            if id_key in maybe_header:
+                id_col = maybe_header.index(id_key)
+                print(id_col)
+            else:
+                id_col = None
+
             return (
                 Document(
+                    id=row[id_col] if id_col is not None else None,
                     text=row[text_col], 
                     metadata=self.extract_metadata_csv(row, text_col, header_without_text),
                     project=project
@@ -101,11 +108,11 @@ class DataUpload(SuperUserMixin, LoginRequiredMixin, TemplateView):
         del copy[text_key]
         return json.dumps(copy)
 
-    def json_to_documents(self, project, file, text_key='text'):            
+    def json_to_documents(self, project, file, text_key='text', id_key='id'):            
         parsed_entries = (json.loads(line) for line in file)
         
         return (
-            Document(text=entry[text_key], metadata=self.extract_metadata_json(entry, text_key), project=project)
+            Document(id=entry[id_key], text=entry[text_key], metadata=self.extract_metadata_json(entry, text_key), project=project)
             for entry in parsed_entries
         )
 
@@ -128,7 +135,17 @@ class DataUpload(SuperUserMixin, LoginRequiredMixin, TemplateView):
                 if not batch:
                     break
 
-                Document.objects.bulk_create(batch, batch_size=batch_size)
+                to_create = list((doc for doc in batch if doc.id is None))
+                to_create_or_update = list((doc for doc in batch if doc.id))
+                
+                Document.objects.bulk_create(to_create, batch_size=batch_size)
+
+                # This is probably a wrong way to do it.
+                # The problem is that even if id is set in import file, 
+                # it is not guaranteed that this document is actually already created
+                for doc in to_create_or_update:
+                    doc.save()
+
                 return HttpResponseRedirect(reverse('dataset', args=[project.id]))
         except DataUpload.ImportFileError as e:
             messages.add_message(request, messages.ERROR, e.message)
