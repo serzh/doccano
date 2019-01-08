@@ -1,5 +1,6 @@
 import json
 import string
+import uuid
 from django.core.exceptions import ValidationError
 from django.db import models
 from django.urls import reverse
@@ -140,7 +141,7 @@ class Label(models.Model):
 
 
 class Document(models.Model):
-    id = models.CharField(primary_key=True, max_length=36)
+    id = models.CharField(primary_key=True, max_length=36, default=lambda: str(uuid.uuid1()))
     text = models.TextField()
     project = models.ForeignKey(Project, related_name='documents', on_delete=models.CASCADE)
     metadata = models.TextField(default='{}')

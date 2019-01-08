@@ -3,6 +3,7 @@ import json
 from io import TextIOWrapper
 import itertools as it
 import logging
+from functools import reduce
 
 from django.urls import reverse
 from django.http import HttpResponse, HttpResponseRedirect
@@ -12,10 +13,11 @@ from django.views.generic import TemplateView, CreateView
 from django.views.generic.list import ListView
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.contrib import messages
+from django.db import transaction
 
 from .permissions import SuperUserMixin
 from .forms import ProjectForm
-from .models import Document, Project
+from .models import Document, Project, DocumentAnnotation, SequenceAnnotation, Seq2seqAnnotation, Annotation, Label
 from app import settings
 
 logger = logging.getLogger(__name__)
@@ -63,6 +65,10 @@ class DataUpload(SuperUserMixin, LoginRequiredMixin, TemplateView):
     class ImportFileError(Exception):
         def __init__(self, message):
             self.message = message
+    
+    class LabelNotCreatedError(Exception):
+        def __init__(self, label_text):
+            self.message = "Label '%s' is not created! Please, create it manually and redo the import." % label_text
 
     def extract_metadata_csv(self, row, text_col, header_without_text):
         vals_without_text = [val for i,val in enumerate(row) if i != text_col]
@@ -108,18 +114,76 @@ class DataUpload(SuperUserMixin, LoginRequiredMixin, TemplateView):
             del copy[key]
         return json.dumps(copy)
 
-    def json_to_documents(self, project, file, text_key='text', id_key='id'):     
-        known_keys = {text_key, id_key}
+    def json_to_annotations_for_doc_classification(self, user, document, entry, labels):
+        labels_text = entry.get('labels', [])
+
+        def f(label_text):
+            if label_text in labels:
+                return DocumentAnnotation(user=user, document=document, label=labels[label_text])
+            else:
+                raise DataUpload.LabelNotCreatedError(label_text)
+
+        return list(map(f, labels_text))
+
+    def json_to_annotations_for_seq_labeling(self, user, document, entry, labels):
+        entities = entry.get('entities', [])
+
+        def f(entity):
+            (start,end,label_text) = entity
+            if label_text in labels:
+                return SequenceAnnotation(user=user, document=document, start_offset=start, end_offset=end, label=labels[label_text])
+            else:
+                raise DataUpload.LabelNotCreatedError(label_text)
+                
+        return list(map(f, entities))
+
+
+    def json_to_annotations_for_seq2seq(self, user, document, entry): 
+        sentences = entry.get('sentences', [])
+        return [
+            Seq2seqAnnotation(user=user, document=document, text=sentence)
+            for sentence in sentences
+        ]
+
+    def json_to_annotations(self, project, user, document, entry, labels):
+        if project.is_type_of(Project.DOCUMENT_CLASSIFICATION):
+            return self.json_to_annotations_for_doc_classification(user, document, entry, labels)
+        elif project.is_type_of(Project.SEQUENCE_LABELING):
+            return self.json_to_annotations_for_seq_labeling(user, document, entry, labels)
+        elif project.is_type_of(Project.Seq2seq):
+            return self.json_to_annotations_for_seq2seq(user, document, entry)
+
+    def json_to_document(self, project, user, entry, text_key, labels):
+        known_keys = {text_key}
+        document = Document(text=entry[text_key], metadata=self.extract_metadata_json(entry, known_keys), project=project)
+        return (
+            document,
+            self.json_to_annotations(project, user, document, entry, labels)
+        )
+
+    def json_to_documents(self, project, user, file, text_key='text'):     
         parsed_entries = (json.loads(line) for line in file)
+        labels = {label.text: label for label in Label.objects.filter(project=project)}
         
         return (
-            Document(id=entry[id_key], text=entry[text_key], metadata=self.extract_metadata_json(entry, known_keys), project=project)
+            self.json_to_document(project, user, entry, text_key, labels)
             for entry in parsed_entries
         )
 
+    def bulk_create_annotations(self, project, annotations, batch_size):
+        if project.is_type_of(Project.DOCUMENT_CLASSIFICATION):
+            cls = DocumentAnnotation
+        elif project.is_type_of(Project.SEQUENCE_LABELING):
+            cls = SequenceAnnotation
+        elif project.is_type_of(Project.Seq2seq):
+            cls = Seq2seqAnnotation
+        
+        cls.objects.bulk_create(annotations, batch_size=batch_size)
+        
 
     def post(self, request, *args, **kwargs):
         project = get_object_or_404(Project, pk=kwargs.get('project_id'))
+        user = self.request.user
         import_format = request.POST['format']
         try:
             file = request.FILES['file'].file
@@ -128,27 +192,24 @@ class DataUpload(SuperUserMixin, LoginRequiredMixin, TemplateView):
                 documents = self.csv_to_documents(project, file)
                 
             elif import_format == 'json':
-                documents = self.json_to_documents(project, file)
+                documents = self.json_to_documents(project, user, file)
 
             batch_size = settings.IMPORT_BATCH_SIZE
-            while True:
-                batch = list(it.islice(documents, batch_size))
-                if not batch:
-                    break
 
-                to_create = [doc for doc in batch if doc.id is None]
-                to_create_or_update = [doc for doc in batch if doc.id]
-                
-                Document.objects.bulk_create(to_create, batch_size=batch_size)
+            with transaction.atomic():
+                while True:
+                    batch = list(it.islice(documents, batch_size))
+                    if not batch:
+                        break
 
-                # This is probably a wrong way to do it.
-                # The problem is that even if id is set in import file, 
-                # it is not guaranteed that this document is actually already created
-                for doc in to_create_or_update:
-                    doc.save()
+                    docs, annotations = zip(*batch)
+                    annotations = reduce(lambda acc,anns: acc + anns, annotations, [])
+
+                    Document.objects.bulk_create(docs, batch_size=batch_size)
+                    self.bulk_create_annotations(project, annotations, batch_size=batch_size)
 
             return HttpResponseRedirect(reverse('dataset', args=[project.id]))
-        except DataUpload.ImportFileError as e:
+        except (DataUpload.ImportFileError, DataUpload.LabelNotCreatedError) as e:
             messages.add_message(request, messages.ERROR, e.message)
             return HttpResponseRedirect(reverse('upload', args=[project.id]))
         except Exception as e:
