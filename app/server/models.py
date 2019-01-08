@@ -202,15 +202,16 @@ class Document(models.Model):
     def make_dataset_for_classification_json(self):
         annotations = self.get_annotations()
         labels = [a.label.text for a in annotations]
-        username = annotations[0].user.username
+        username = annotations[0].user.username if len(annotations) > 0 else None
         dataset = json.loads(self.metadata)
         dataset.update({'id': self.id, 'text': self.text, 'labels': labels, 'username': username})
         return dataset
 
     def make_dataset_for_sequence_labeling_json(self):
+        print(self.get_annotations())
         annotations = self.get_annotations()
         entities = [(a.start_offset, a.end_offset, a.label.text) for a in annotations]
-        username = annotations[0].user.username
+        username = annotations[0].user.username if len(annotations) > 0 else None
         dataset = json.loads(self.metadata)
         dataset.update({'id': self.id, 'text': self.text, 'entities': entities, 'username': username})
         return dataset
@@ -218,7 +219,7 @@ class Document(models.Model):
     def make_dataset_for_seq2seq_json(self):
         annotations = self.get_annotations()
         sentences = [a.text for a in annotations]
-        username = annotations[0].user.username
+        username = annotations[0].user.username if len(annotations) > 0 else None
         dataset = json.loads(self.metadata)
         dataset.update({'id': self.id, 'text': self.text, 'sentences': sentences, 'username': username})
         return dataset

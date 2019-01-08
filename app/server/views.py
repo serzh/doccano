@@ -227,7 +227,7 @@ class DataDownloadFile(SuperUserMixin, LoginRequiredMixin, View):
     def get(self, request, *args, **kwargs):
         project_id = self.kwargs['project_id']
         project = get_object_or_404(Project, pk=project_id)
-        docs = project.get_documents(is_null=False).distinct()
+        docs = project.documents.all().distinct()
         export_format = request.GET.get('format')
         filename = '_'.join(project.name.lower().split())
         try:
